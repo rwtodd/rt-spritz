@@ -11,9 +11,8 @@
   (a 0 :type (unsigned-byte 8))
   (w 1 :type (unsigned-byte 8))
   (mem (let ((arr (make-array 256 :element-type '(unsigned-byte 8))))
-	 (dotimes (idx 256)
-	   (setf (aref arr idx) idx))
-	 arr)
+	 (dotimes (idx 256 arr)
+	   (setf (aref arr idx) idx)))
    :type (simple-array (unsigned-byte 8) (256))))
 
 ;; take an existing ss struct and reset it to initial values
@@ -128,14 +127,15 @@
   (declare (type ss s)
 	   (type (simple-array (unsigned-byte 8) 1) tgt)
 	   (optimize (speed 3) (safety 0) (debug 0)))
-  (dotimes (idx (length tgt) tgt)
+  (dotimes (idx (array-dimension tgt 0) tgt)
     (setf (aref tgt idx) (drip s))))
 
-(defun squeeze-xor (s tgt)
+(defun squeeze-xor (s tgt &optional (end (array-dimension tgt 0)))
   (declare (type ss s)
 	   (type (simple-array (unsigned-byte 8) 1) tgt)
+	   (type fixnum end)
 	   (optimize (speed 3) (safety 0) (debug 0)))
-  (dotimes (idx (length tgt) tgt)
+  (dotimes (idx end tgt)
     (setf (aref tgt idx) (logxor (aref tgt idx) (drip s)))))
   
 (defun absorb-int-bytes (s n)
@@ -145,4 +145,7 @@
       (absorb-int-bytes s (ash n -8)))
   (absorb s n))
 
-
+(defun random-bytes (n)
+  "create an array of N random bytes"
+  (let ((v (make-array n :element-type '(unsigned-byte 8))))
+    (dotimes (idx n v) (setf (aref v idx) (random 256)))))
