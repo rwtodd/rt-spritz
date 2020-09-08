@@ -1,6 +1,7 @@
 ;; S P R I T Z   C I P H E R
 
 (in-package "RT-SPRITZ-CIPHER")
+(declaim (inline drip-internal))
 
 ;; ss ==> "spritz state"
 (defstruct ss
@@ -18,7 +19,7 @@
 ;; take an existing ss struct and reset it to initial values
 (defun reset-ss (s)
   (declare (type ss s)
-	   (optimize (speed 3)))
+	   (optimize (speed 3) (safety 0)))
   (setf (ss-i s) 0
 	(ss-j s) 0
 	(ss-k s) 0
@@ -50,7 +51,7 @@
 	(j (ss-j s))
 	(k (ss-k s))
 	(w (ss-w s))
-	(mem (ss-mem s))) 
+	(mem (ss-mem s)))
     (dotimes (_ times)
       (setq i (u8+ i w))
       (let ((mem-i (aref mem i)))
@@ -63,11 +64,35 @@
 	  (ss-j s) j
 	  (ss-k s) k)))
 
+(defun update-once (s)
+  (declare (type ss s)
+	   (optimize (speed 3) (safety 0) (debug 0)))
+  (let ((i (ss-i s))
+	(j (ss-j s))
+	(k (ss-k s))
+	(w (ss-w s))
+	(mem (ss-mem s)))
+    (setq i (u8+ i w))
+    (let ((mem-i (aref mem i)))
+      (setq j (u8+ k (mem-at-sum mem j mem-i)))
+      (let ((mem-j (aref mem j)))
+        (setf k            (u8+ i k mem-j)
+	      (aref mem i) mem-j
+	      (aref mem j) mem-i)))
+    (setf (ss-i s) i
+	  (ss-j s) j
+	  (ss-k s) k)))
+
 (defun whip (s amt)
+  (declare (type ss s)
+	   (type fixnum amt)
+	   (optimize (speed 3) (safety 0) (debug 0)))
   (update s amt)
   (setf (ss-w s) (u8+ (ss-w s) 2)))
 
 (defun shuffle (s)
+  (declare (type ss s)
+	   (optimize (speed 3) (debug 0) (safety 0)))
   (whip s 512)
   (crush s)
   (whip s 512)
@@ -105,14 +130,15 @@
       (absorb s x))))
 
 (defun absorb-stop (s)
+  (declare (type ss s)
+	   (optimize (speed 3) (safety 0) (debug 0)))
   (maybe-shuffle s 128)
   (incf (ss-a s)))
 
-(defun drip (s)
+(defun drip-internal (s)
   (declare (type ss s)
 	   (optimize (speed 3) (safety 0) (debug 0)))
-  (maybe-shuffle s 1)
-  (update s 1)
+  (update-once s)
   (let ((mem (ss-mem s)))
     (setf (ss-z s) 
 	  (mem-at-sum mem
@@ -123,29 +149,41 @@
 					      (ss-z s)
 					      (ss-k s)))))))
 
+(defun drip (s)
+  (declare (type ss s)
+	   (optimize (speed 3) (safety 0) (debug 0)))
+  (maybe-shuffle s 1)
+  (drip-internal s))
+
 (defun squeeze (s tgt)
   (declare (type ss s)
 	   (type (simple-array (unsigned-byte 8) 1) tgt)
 	   (optimize (speed 3) (safety 0) (debug 0)))
+  (maybe-shuffle s 1)
   (dotimes (idx (array-dimension tgt 0) tgt)
-    (setf (aref tgt idx) (drip s))))
+    (setf (aref tgt idx) (drip-internal s))))
 
 (defun squeeze-xor (s tgt &optional (end (array-dimension tgt 0)))
   (declare (type ss s)
 	   (type (simple-array (unsigned-byte 8) 1) tgt)
 	   (type fixnum end)
+	   (inline drip-internal)
 	   (optimize (speed 3) (safety 0) (debug 0)))
+  (maybe-shuffle s 1)
   (dotimes (idx end tgt)
-    (setf (aref tgt idx) (logxor (aref tgt idx) (drip s)))))
+    (setf (aref tgt idx) (logxor (aref tgt idx) (drip-internal s)))))
   
 (defun absorb-int-bytes (s n)
   (declare (type ss s)
-	   (type fixnum n))
-  (if (> n 255)
-      (absorb-int-bytes s (ash n -8)))
+	   (type fixnum n)
+	   (optimize (speed 3) (safety 0) (debug 0)))
+  (when (> n 255)
+    (absorb-int-bytes s (ash n -8)))
   (absorb s n))
 
 (defun random-bytes (n)
   "create an array of N random bytes"
+  (declare (type (integer 1 128) n)
+	   (optimize (speed 3) (safety 0) (debug 0)))
   (let ((v (make-array n :element-type '(unsigned-byte 8))))
     (dotimes (idx n v) (setf (aref v idx) (random 256)))))

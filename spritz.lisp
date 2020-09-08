@@ -1,6 +1,6 @@
 (in-package "RT-SPRITZ")
 
-(defconstant +BUFSZ+ 4096)
+(defconstant +BUFSZ+ (* 2 4096))
 
 (defun hash-into (tgt src)
   "compute the hash of the SRC bytes into the TGT array, returning TGT"
@@ -19,7 +19,7 @@
   (when supplied (cipher:reset-ss spritz))
   (with-open-file (inbytes (pathname fname) :element-type '(unsigned-byte 8))
     (loop :for pos = (read-sequence buffer inbytes)
-	  :while (> pos 0)
+	  :while (plusp pos)
 	  :do (cipher:absorb-vec spritz buffer pos)))
   (cipher:absorb-stop spritz)
   (cipher:absorb-int-bytes spritz (array-dimension tgt 0))
@@ -85,6 +85,9 @@ via the format function. Hashes are of size SIZE and are formatted according to 
 
 (defun generate-skipped-stream (key n)
   "create a stream based on KEY, with 2048+N values skipped"
+  (declare (type (simple-array (unsigned-byte 8) 1) key)
+	   (type fixnum n)
+	   (optimize (speed 3) (safety 0) (debug 0)))
   (let ((s (cipher:make-ss)))
     (cipher:absorb-vec s key 64)
     (dotimes (_ (+ 2048 n) s)
@@ -93,7 +96,8 @@ via the format function. Hashes are of size SIZE and are formatted according to 
 (defun encrypt-header (hdr pw-hash)
   "take a header with all the parts filled in, and encrypt it against pw-hash"
   (declare (type header hdr)
-	   (type (simple-array (unsigned-byte 8) (64)) pw-hash))
+	   (type (simple-array (unsigned-byte 8) (64)) pw-hash)
+	   (optimize (speed 3) (safety 0) (debug 0)))
   (let* ((iv         (copy-seq (header-iv hdr)))
 	 (key        (keygen (+ 20000 (aref iv 3)) iv pw-hash))
 	 (s          (generate-skipped-stream key (aref iv 1)))
@@ -118,7 +122,9 @@ via the format function. Hashes are of size SIZE and are formatted according to 
 
 (defun write-header (hdr outstr)
   "write the header contents to outstr"
-  (declare (type header hdr))
+  (declare (type header hdr)
+	   (type stream outstr)
+	   (optimize (speed 3) (debug 0) (safety 0)))
   (write-sequence (header-iv hdr)      outstr)
   (write-sequence (header-chk hdr)     outstr)
   (write-sequence (header-hsh-chk hdr) outstr)
@@ -126,7 +132,11 @@ via the format function. Hashes are of size SIZE and are formatted according to 
 
 (defun stream-xor-copy (enc in out)
   "copy IN to OUT, xoring the bytes with ENC along the way"
+  (declare (type cipher:ss enc)
+	   (type stream in out)
+	   (optimize (speed 3) (safety 0) (debug 0)))
   (let ((buffer (make-array +BUFSZ+ :element-type '(unsigned-byte 8))))
+    (declare (type (simple-array (unsigned-byte 8) 1) buffer))
     (loop :for pos = (read-sequence buffer in)
 	  :while (> pos 0)
 	  :do (cipher:squeeze-xor enc buffer pos)
@@ -134,7 +144,9 @@ via the format function. Hashes are of size SIZE and are formatted according to 
 
 (defun encrypt-stream (instr outstr pw-hash)
   "encrypt the contents of instr to outstr, using hashed password pw-hash"
-  (declare (type (simple-array (unsigned-byte 8) (64)) pw-hash))
+  (declare (type stream instr outstr)
+	   (type (simple-array (unsigned-byte 8) (64)) pw-hash)
+	   (optimize (speed 3) (safety 0) (debug 0)))
   (let* ((hdr (make-header))
 	 (encstr (generate-skipped-stream (header-key hdr) (aref (header-chk hdr) 1))))
     (hash-into (header-hsh-chk hdr) (header-chk hdr))
